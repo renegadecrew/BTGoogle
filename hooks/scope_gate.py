@@ -111,7 +111,7 @@ NET_TOOL = re.compile(
     r"host|whois|ssh|scp|sftp|ftp|nc|netcat|telnet|"
     r"Test-Connection|Test-NetConnection|Resolve-DnsName|"
     r"Invoke-WebRequest|Invoke-RestMethod|iwr|irm)\b"
-    r"[^\r\n;|&]*?\s" + _TOKEN,
+    r"(?:\s+(?:-\S+|\d+))*\s+" + _TOKEN,
     re.I,
 )
 HOST_FLAG = re.compile(
