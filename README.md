@@ -158,6 +158,9 @@ Merge the printed entry into `%USERPROFILE%\.gemini\config\hooks.json`:
 }
 ```
 
+`<you>` is a placeholder, not a literal path. Replace it with your Windows
+account name. `scripts/install.ps1` prints the exact `command` line for your
+machine, so the copy-paste-safe path is to run the installer and use its output.
 Use forward slashes in `command`. Restart Antigravity or reload hooks, then
 confirm with `/hooks` in the TUI. The full schema, including the stdin payload
 and every accepted `decision` value, is in
