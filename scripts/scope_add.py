@@ -21,6 +21,9 @@ DOMAIN_RE = re.compile(
     r"(?:\*\.)?(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,24}", re.I
 )
 LAB_TLDS = {"htb", "local", "lab", "test", "internal"}
+_lab_extra = os.environ.get("BTG_LAB_TLDS", "")
+if _lab_extra:
+    LAB_TLDS |= {item.strip().lower() for item in _lab_extra.split(",") if item.strip()}
 
 
 def is_valid(asset: str) -> bool:

@@ -39,7 +39,7 @@ CASES = [
     # label, tool, field, value, expected
     ("python identifier", "run_command", "CommandLine",
      'python -c "import json; json.loads(s); urllib.request.urlopen(u)"', "allow"),
-    ("ovpn file name", "run_command", "CommandLine",
+    ("file name", "run_command", "CommandLine",
      'Test-Path "C:\\samples\\release-2.ovpn"', "allow"),
     ("in-scope URL", "run_command", "CommandLine",
      "curl https://api.example.org/App.js", "allow"),

@@ -62,6 +62,9 @@ GATE_PRIVATE = os.environ.get("BTG_GATE_PRIVATE_IPS") == "1"
 # wildcard would authorize a large part of the public Internet, so it is
 # rejected at load time.
 LAB_TLDS = {"htb", "local", "lab", "test", "internal"}
+_lab_extra = os.environ.get("BTG_LAB_TLDS", "")
+if _lab_extra:
+    LAB_TLDS |= {item.strip().lower() for item in _lab_extra.split(",") if item.strip()}
 
 CMD_TOOLS = {"run_command": "CommandLine", "manage_task": "Input"}
 TEXT_TOOLS = {"read_url_content": "Url", "search_web": "query", "ask_permission": "Target"}

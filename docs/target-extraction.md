@@ -29,7 +29,7 @@ Invoke-WebRequest Invoke-RestMethod iwr irm
 | Input | Why it is ignored |
 |---|---|
 | `json.loads(s)`, `urllib.request`, `re.findall` | Dotted identifiers are not domains |
-| `release-2.ovpn`, `report.pdf` | File names are not hosts |
+| `sample.bin`, `report.pdf` | File names are not hosts |
 | `search_web` query text | Searching for a domain does not contact it |
 | `10.0.0.5` (default) | Private addresses are lab noise |
 | Comments, prose, documentation | No network context |

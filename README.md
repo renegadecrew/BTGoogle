@@ -49,6 +49,7 @@ name, or private lab address into a security prompt.
 - [Quickstart](#quickstart)
 - [Program file format](#program-file-format)
 - [Adding assets](#adding-assets)
+- [Other engagements and labs](#other-engagements-and-labs)
 - [Configuration](#configuration)
 - [Decision log](#decision-log)
 - [Verification](#verification)
@@ -59,7 +60,7 @@ name, or private lab address into a security prompt.
 
 ## Why
 
-A scope gate that flags `json.loads` as a domain, `release-2.ovpn` as a host,
+A scope gate that flags `json.loads` as a domain, `sample.bin` as a host,
 and `10.0.0.5` as an out-of-scope target is not a safety control. It is noise.
 Operators learn to approve every prompt, and the one prompt that mattered is
 approved with the rest.
@@ -82,6 +83,7 @@ BTGoogle/
 │   ├── hook-contract.md            # Antigravity hook schema and payloads
 │   ├── scope-model.md              # program files, matching, precedence
 │   ├── target-extraction.md        # inspected and ignored contexts
+│   ├── other-engagements.md        # recipes for web, AD, CTF, cloud, malware
 │   └── troubleshooting.md          # BOM, force_ask vs ask, .htb, private IPs
 ├── hooks/
 │   ├── scope_gate.py               # the PreToolUse hook
@@ -238,6 +240,23 @@ python scripts/scope_add.py --program hooks/programs/manual.md example.com
 Invalid input is rejected: a value that is not a domain, wildcard, IPv4
 address, or CIDR is reported and skipped. Duplicates are not added twice.
 
+## Other engagements and labs
+
+The gate is scope-agnostic: it enforces whatever program files you give it. It
+does not assume a bug-bounty program, a CTF, or any particular platform.
+
+| Engagement | What changes |
+|---|---|
+| Web app / bug bounty | Add the program's domains and wildcards |
+| Internal network / AD | Add CIDRs; enable your lab TLD with `BTG_LAB_TLDS` |
+| CTF / hosted lab | Add the platform's CIDR and wildcard |
+| Cloud | List specific assets; never wildcard a shared cloud domain |
+| Malware / binary analysis | Local commands are allowed; add sample sources to noise |
+| CVE / vendor research | Local PoCs are allowed; add reference sites to noise |
+
+Recipes for each case, including how to enable a new lab TLD, are in
+[`docs/other-engagements.md`](docs/other-engagements.md).
+
 ## Configuration
 
 All configuration is through environment variables and files.
@@ -249,6 +268,7 @@ All configuration is through environment variables and files.
 | `BTG_LOG_FILE` | `~/.gemini/config/.hook_state/scope-gate.log` | JSON Lines decision log |
 | `BTG_OUT_OF_SCOPE` | `force_ask` | `force_ask` (always prompt) or `ask` (respect Always-Allow) |
 | `BTG_GATE_PRIVATE_IPS` | unset | `1` also gates private/loopback/link-local addresses |
+| `BTG_LAB_TLDS` | `htb,local,lab,test,internal` | Extra single-label wildcard TLDs, comma-separated |
 
 Only `force_ask` and `ask` are accepted for `BTG_OUT_OF_SCOPE`. The value is
 validated so a typo cannot turn the gate into `allow`.
@@ -275,7 +295,7 @@ The file rotates to `.log.1` at 2 MB.
 | Case | Expected |
 |---|---|
 | Dotted Python identifiers (`json.loads`, `urllib.request`) | `allow` |
-| File names (`release-2.ovpn`) | `allow` |
+| File names (`sample.bin`) | `allow` |
 | In-scope URL | `allow` |
 | Out-of-scope URL | `force_ask` |
 | Bare host passed to `nmap` | `force_ask` |
