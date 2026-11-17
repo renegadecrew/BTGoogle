@@ -2,16 +2,18 @@
 
 **Blue-team scope enforcement for Google Antigravity tool hooks.**
 
+Repository: <https://github.com/renegadecrew/BTGoogle>
+
 An agent that can run commands, fetch URLs, and write files is only as safe as
 the boundary you put around it. BTGoogle is a `PreToolUse` hook that enforces a
 file-based scope registry and refuses to turn every dotted identifier, file
 name, or private lab address into a security prompt.
 
-- No hidden state: authorization lives in Markdown files you can review.
+- No hidden state: authorization lives in Markdown files you can review and diff.
 - No network calls: the gate is pure text matching.
 - No silent widening: out-of-scope hosts prompt; explicit exclusions always win.
-- Fail-open: a crashing gate logs the error and allows, instead of bricking the
-  agent.
+- Fail-open: a crashing gate logs the error and allows, instead of bricking the agent.
+- Tested: 18 replication cases, all passing.
 
 ```
    agent tool call
@@ -40,6 +42,21 @@ name, or private lab address into a security prompt.
    +--------------+
 ```
 
+## Table of contents
+
+- [Why](#why)
+- [Repository layout](#repository-layout)
+- [Quickstart](#quickstart)
+- [Program file format](#program-file-format)
+- [Adding assets](#adding-assets)
+- [Configuration](#configuration)
+- [Decision log](#decision-log)
+- [Verification](#verification)
+- [Design notes](#design-notes)
+- [Limitations](#limitations)
+- [Further reading](#further-reading)
+- [License](#license)
+
 ## Why
 
 A scope gate that flags `json.loads` as a domain, `release-2.ovpn` as a host,
@@ -58,23 +75,32 @@ The fix is precision, not permissiveness:
 
 ```
 BTGoogle/
+├── README.md
+├── LICENSE                         # MIT
+├── .gitignore
+├── docs/
+│   ├── hook-contract.md            # Antigravity hook schema and payloads
+│   ├── scope-model.md              # program files, matching, precedence
+│   ├── target-extraction.md        # inspected and ignored contexts
+│   └── troubleshooting.md          # BOM, force_ask vs ask, .htb, private IPs
 ├── hooks/
-│   ├── scope_gate.py          # the PreToolUse hook
-│   ├── noise.json             # reference domains that are never targets
-│   ├── hooks.json.example     # Antigravity hook configuration
+│   ├── scope_gate.py               # the PreToolUse hook
+│   ├── noise.json                  # reference domains that are never targets
+│   ├── hooks.json.example          # Antigravity hook configuration
 │   └── programs/
-│       ├── example-program.md # template: replace with your engagement
-│       └── lab.md             # RFC 1918 ranges and lab wildcards
-├── tests/
-│   └── test_gate.py           # replication matrix (18 cases)
+│       ├── example-program.md      # template: replace with your engagement
+│       └── lab.md                  # RFC 1918 ranges and lab wildcards
 ├── scripts/
-│   ├── install.ps1            # copy into ~/.gemini/config
-│   └── verify.ps1             # send sample payloads through the gate
-└── docs/
-    ├── hook-contract.md       # Antigravity hook schema
-    ├── scope-model.md         # program files, matching, precedence
-    ├── target-extraction.md   # inspected and ignored contexts
-    └── troubleshooting.md
+│   ├── install.ps1                 # copy into ~/.gemini/config
+│   ├── verify.ps1                  # send sample payloads through the gate
+│   └── scope_add.py                # add assets to a program file
+└── tests/
+    ├── test_gate.py                # replication matrix (18 cases)
+    └── payloads/
+        ├── README.md
+        ├── allow-in-scope.json
+        ├── ask-out-of-scope.json
+        └── deny-destructive.json
 ```
 
 ## Quickstart
@@ -85,7 +111,7 @@ and Google Antigravity with hooks enabled.
 ### 1. Clone and test
 
 ```powershell
-git clone <your-fork-url> BTGoogle
+git clone https://github.com/renegadecrew/BTGoogle.git
 Set-Location BTGoogle
 python tests/test_gate.py
 ```
@@ -133,7 +159,9 @@ Merge the printed entry into `%USERPROFILE%\.gemini\config\hooks.json`:
 ```
 
 Use forward slashes in `command`. Restart Antigravity or reload hooks, then
-confirm with `/hooks` in the TUI.
+confirm with `/hooks` in the TUI. The full schema, including the stdin payload
+and every accepted `decision` value, is in
+[`docs/hook-contract.md`](docs/hook-contract.md).
 
 ### 4. Add your real scope
 
@@ -160,6 +188,53 @@ legacy.acme.example
 powershell -ExecutionPolicy Bypass -File scripts/verify.ps1
 ```
 
+## Program file format
+
+A program is a Markdown file in the programs directory:
+
+```markdown
+# Program: example-public-program
+expires: 2027-01-31
+
+## In-scope
+
+*.example.org
+example.org
+10.0.0.0/8
+
+## Out-of-scope
+
+legacy.example.org
+```
+
+| Field | Required | Meaning |
+|---|---|---|
+| `# Program:` heading | No | Free-form label |
+| `expires:` | No | `YYYY-MM-DD`. After that date the program is ignored |
+| `## In-scope` | Yes | One asset per line |
+| `## Out-of-scope` | No | One asset per line, checked before authorization |
+
+Accepted asset forms: `example.org`, `*.example.org`, `203.0.113.10`,
+`203.0.113.0/24`. A wildcard does not cover its own apex. Single-label
+wildcards (`*.htb`) are accepted only for the lab TLDs `htb`, `local`, `lab`,
+`test`, and `internal`.
+
+Matching precedence is documented in
+[`docs/scope-model.md`](docs/scope-model.md).
+
+## Adding assets
+
+`scripts/scope_add.py` appends validated assets to a program file:
+
+```powershell
+python scripts/scope_add.py example.com 203.0.113.0/24
+python scripts/scope_add.py --program hooks/programs/manual.md example.com
+"example.com" | python scripts/scope_add.py
+```
+
+Invalid input is rejected: a value that is not a domain, wildcard, IPv4
+address, or CIDR is reported and skipped. Duplicates are not added twice.
+
 ## Configuration
 
 All configuration is through environment variables and files.
@@ -175,6 +250,10 @@ All configuration is through environment variables and files.
 Only `force_ask` and `ask` are accepted for `BTG_OUT_OF_SCOPE`. The value is
 validated so a typo cannot turn the gate into `allow`.
 
+When the script is run from a checkout, it uses the local `hooks/programs/`
+and `hooks/noise.json` unless an environment variable overrides them. When it
+is installed under `~/.gemini/config/hooks/`, it uses the global directories.
+
 ## Decision log
 
 Every decision is appended as JSON Lines:
@@ -186,15 +265,41 @@ Every decision is appended as JSON Lines:
 
 The file rotates to `.log.1` at 2 MB.
 
+## Verification
+
+`tests/test_gate.py` runs 18 cases against `hooks/scope_gate.py`, including:
+
+| Case | Expected |
+|---|---|
+| Dotted Python identifiers (`json.loads`, `urllib.request`) | `allow` |
+| File names (`release-2.ovpn`) | `allow` |
+| In-scope URL | `allow` |
+| Out-of-scope URL | `force_ask` |
+| Bare host passed to `nmap` | `force_ask` |
+| Private lab IP | `allow` |
+| Public IP | `force_ask` |
+| `search_web` query containing a domain | `allow` |
+| `search_web` query containing a URL | `force_ask` |
+| Noise-reference URL | `allow` |
+| Similar but non-noise URL | `force_ask` |
+| Explicit out-of-scope asset under a covering wildcard | `force_ask` |
+| `*.htb` in-scope host and subdomain | `allow` |
+| RFC 1918 CIDR | `allow` |
+| Destructive command | `deny` |
+
+Last verified run: **18/18 passed** on Python 3.12.10 and Windows 11 with
+PowerShell 7 and GitHub CLI 2.89.0.
+
 ## Design notes
 
 **Context-aware extraction.** The gate inspects URLs, arguments to known
 network tools, and host flags. It ignores search queries without URLs, code
-identifiers, and file names. See `docs/target-extraction.md`.
+identifiers, and file names. See
+[`docs/target-extraction.md`](docs/target-extraction.md).
 
 **Explicit registry.** Authorization is derived from Markdown files that a
 reviewer can read and diff. There is no database and no learned state. See
-`docs/scope-model.md`.
+[`docs/scope-model.md`](docs/scope-model.md).
 
 **Exclusion precedence.** An explicit out-of-scope asset removes a host even
 when a wildcard covers it.
@@ -206,6 +311,9 @@ are how a single fetched page becomes code execution on every future tool call.
 **Fail-open.** A crashing hook returns `allow` and logs the error. A gate that
 blocks everything gets disabled in a day.
 
+**Encoding tolerance.** `noise.json` is read as `utf-8-sig`, so a UTF-8 BOM
+written by an editor does not silently disable the reference list.
+
 ## Limitations
 
 - The gate sees the agent's command text, not the behavior of the programs it
@@ -214,9 +322,11 @@ blocks everything gets disabled in a day.
 - Matching is textual. No DNS resolution, no certificate validation, and no
   ownership verification.
 - Scope is not inferred from conversation history. Programs are added
-  explicitly.
-- The standalone gate does not include transcript auto-capture. Add programs
-  with `scope_add.py` or by writing a Markdown file.
+  explicitly with `scope_add.py` or by writing a Markdown file.
+- This standalone gate does not include transcript auto-capture. That feature
+  exists in richer integrations but is intentionally omitted here, because an
+  auto-capture path that misreads code as a scope paste can authorize hosts
+  that were never in scope.
 
 ## Further reading
 
@@ -227,4 +337,4 @@ blocks everything gets disabled in a day.
 
 ## License
 
-MIT. See `LICENSE`.
+MIT. See [LICENSE](LICENSE).
