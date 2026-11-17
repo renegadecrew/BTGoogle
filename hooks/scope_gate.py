@@ -318,8 +318,14 @@ def extract_targets(text: str, is_cmd: bool, tool: str) -> set[str]:
 
 
 def decide_write(args: dict, tool: str) -> dict:
-    path = (args.get(WRITE_TOOLS[tool]) or "").replace("\\", "/")
-    if path and PROTECTED_PATH.search(os.path.expanduser(path)):
+    raw_path = args.get(WRITE_TOOLS[tool]) or ""
+    # Tool paths are often workspace-relative. Check the normalized absolute
+    # path so `.agents/hooks.json` is protected just like its absolute form.
+    path = ""
+    if isinstance(raw_path, str) and raw_path.strip():
+        path = os.path.realpath(os.path.abspath(os.path.expanduser(raw_path)))
+        path = path.replace("\\", "/")
+    if path and PROTECTED_PATH.search(path):
         log({"event": "protected-write", "tool": tool, "path": path})
         return {
             "decision": "force_ask",

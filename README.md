@@ -1,5 +1,7 @@
 # BTGoogle
 
+![BTGoogle scope gate in pixel art](docs/assets/cover.png)
+
 **Blue-team scope enforcement for Google Antigravity tool hooks.**
 
 Repository: <https://github.com/renegadecrew/BTGoogle>
@@ -13,7 +15,7 @@ name, or private lab address into a security prompt.
 - No network calls: the gate is pure text matching.
 - No silent widening: out-of-scope hosts prompt; explicit exclusions always win.
 - Fail-open: a crashing gate logs the error and allows, instead of bricking the agent.
-- Tested: 18 replication cases, all passing.
+- Tested: 21 replication cases, all passing.
 
 ```
    agent tool call
@@ -97,7 +99,7 @@ BTGoogle/
 │   ├── verify.ps1                  # send sample payloads through the gate
 │   └── scope_add.py                # add assets to a program file
 └── tests/
-    ├── test_gate.py                # replication matrix (18 cases)
+    ├── test_gate.py                # replication matrix (21 cases)
     └── payloads/
         ├── README.md
         ├── allow-in-scope.json
@@ -121,7 +123,7 @@ python tests/test_gate.py
 Expected output:
 
 ```
-18/18 passed
+21/21 passed
 ```
 
 ### 2. Install
@@ -290,7 +292,7 @@ The file rotates to `.log.1` at 2 MB.
 
 ## Verification
 
-`tests/test_gate.py` runs 18 cases against `hooks/scope_gate.py`, including:
+`tests/test_gate.py` runs 21 cases against `hooks/scope_gate.py`, including:
 
 | Case | Expected |
 |---|---|
@@ -310,8 +312,8 @@ The file rotates to `.log.1` at 2 MB.
 | RFC 1918 CIDR | `allow` |
 | Destructive command | `deny` |
 
-Last verified run: **18/18 passed** on Python 3.12.10 and Windows 11 with
-PowerShell 7 and GitHub CLI 2.89.0.
+Last verified run: **21/21 passed**. The regression matrix includes writes to
+protected hook locations using relative paths.
 
 ## Design notes
 

@@ -73,6 +73,12 @@ CASES = [
      "nmap 172.20.0.9", "allow"),
     ("destructive command", "run_command", "CommandLine",
      "rm -rf /", "deny"),
+    ("relative hook config write", "write_to_file", "TargetFile",
+     ".agents/hooks.json", "force_ask"),
+    ("relative git hook write", "replace_file_content", "TargetFile",
+     ".git/hooks/pre-commit", "force_ask"),
+    ("ordinary relative write", "write_to_file", "TargetFile",
+     "docs/notes.md", "allow"),
 ]
 
 
