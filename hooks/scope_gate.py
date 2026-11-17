@@ -22,6 +22,7 @@ import ipaddress
 import json
 import os
 import re
+import shlex
 import sys
 from datetime import date, datetime, timezone
 
@@ -108,7 +109,7 @@ _TOKEN = r"((?:\d{1,3}\.){3}\d{1,3}|(?:[a-z0-9](?:[a-z0-9\-]*[a-z0-9])?\.)+[a-z]
 URL_HOST = re.compile(r"https?://([^/\s:'\"<>)\]]+)", re.I)
 NET_TOOL = re.compile(
     r"\b(?:nmap|masscan|curl|wget|ping|ping6|tracert|traceroute|nslookup|dig|"
-    r"host|whois|ssh|scp|sftp|ftp|nc|netcat|telnet|"
+    r"host|whois|scp|sftp|ftp|nc|netcat|telnet|"
     r"Test-Connection|Test-NetConnection|Resolve-DnsName|"
     r"Invoke-WebRequest|Invoke-RestMethod|iwr|irm)\b"
     r"(?:\s+(?:-\S+|\d+))*\s+" + _TOKEN,
@@ -118,6 +119,11 @@ HOST_FLAG = re.compile(
     r"-(?:Host|ComputerName|Uri|Url|Server|Target|Address)\s+[\"']?" + _TOKEN,
     re.I,
 )
+SSH_TOOL = re.compile(r"(?<![\w.-])ssh(?=\s)", re.I)
+SSH_VALUE_OPTIONS = {
+    "-b", "-c", "-D", "-E", "-e", "-F", "-I", "-i", "-J", "-L",
+    "-l", "-m", "-O", "-o", "-p", "-Q", "-R", "-S", "-W", "-w",
+}
 
 EXT_RE = re.compile(
     r"\.(py|js|ts|jsx|tsx|json|md|txt|log|exe|dll|so|yaml|yml|toml|sh|ps1|"
@@ -297,6 +303,46 @@ def _host_from_url(raw: str) -> str:
     return host.strip(".").lower()
 
 
+def _ssh_targets(text: str) -> set[str]:
+    """Extract SSH destinations without treating dotted code identifiers as hosts."""
+    targets: set[str] = set()
+    for match in SSH_TOOL.finditer(text):
+        tail = re.split(r"[\r\n;|&]", text[match.end():], maxsplit=1)[0]
+        try:
+            args = shlex.split(tail)
+        except ValueError:
+            continue
+
+        index = 0
+        while index < len(args):
+            arg = args[index]
+            if arg == "--":
+                index += 1
+                break
+            if not arg.startswith("-") or arg == "-":
+                break
+
+            option = arg.split("=", 1)[0]
+            if option in SSH_VALUE_OPTIONS:
+                if "=" not in arg:
+                    index += 2
+                else:
+                    index += 1
+            elif len(arg) > 2 and arg[:2] in SSH_VALUE_OPTIONS:
+                # OpenSSH also accepts attached values such as -p2222 and -iKEY.
+                index += 1
+            else:
+                index += 1
+
+        if index >= len(args):
+            continue
+        destination = args[index].rsplit("@", 1)[-1]
+        for token in re.finditer(_TOKEN, destination, re.I):
+            targets.add(token.group(1).lower())
+            break
+    return targets
+
+
 def extract_targets(text: str, is_cmd: bool, tool: str) -> set[str]:
     """Return target hosts found in network contexts only."""
     targets: set[str] = set()
@@ -309,6 +355,7 @@ def extract_targets(text: str, is_cmd: bool, tool: str) -> set[str]:
         for match in re.finditer(_TOKEN, text, re.I):
             targets.add(match.group(1).lower())
     elif is_cmd:
+        targets.update(_ssh_targets(text))
         for match in NET_TOOL.finditer(text):
             targets.add(match.group(1).lower())
         for match in HOST_FLAG.finditer(text):

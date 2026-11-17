@@ -79,6 +79,18 @@ CASES = [
      ".git/hooks/pre-commit", "force_ask"),
     ("ordinary relative write", "write_to_file", "TargetFile",
      "docs/notes.md", "allow"),
+    ("paramiko class identifier", "run_command", "CommandLine",
+     "python -c \"ssh = paramiko.SSHClient()\"", "allow"),
+    ("paramiko connect identifier", "run_command", "CommandLine",
+     "python -c \"ssh.connect('10.129.181.174')\"", "allow"),
+    ("ssh close identifier", "run_command", "CommandLine",
+     "python -c \"ssh.close()\"", "allow"),
+    ("ssh user destination", "run_command", "CommandLine",
+     "ssh user@evil.test.org", "force_ask"),
+    ("ssh port and user destination", "run_command", "CommandLine",
+     "ssh -p 22 user@evil.test.org", "force_ask"),
+    ("ssh identity and destination", "run_command", "CommandLine",
+     "ssh -i lab_key user@evil.test.org", "force_ask"),
 ]
 
 
