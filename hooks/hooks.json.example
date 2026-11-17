@@ -1,0 +1,29 @@
+{
+  "scope-gate": {
+    "enabled": true,
+    "PreToolUse": [
+      {
+        "matcher": "run_command|manage_task|read_url_content|search_web|ask_permission|write_to_file|replace_file_content|multi_replace_file_content|browser_.*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python C:/Users/<you>/.gemini/config/hooks/scope_gate.py",
+            "timeout": 15
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "run_command|manage_task|read_url_content|search_web",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python C:/Users/<you>/.gemini/config/hooks/scope_gate.py",
+            "timeout": 15
+          }
+        ]
+      }
+    ]
+  }
+}

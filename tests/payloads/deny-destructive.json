@@ -1,0 +1,8 @@
+{
+  "toolCall": {
+    "name": "run_command",
+    "args": {
+      "CommandLine": "rm -rf /"
+    }
+  }
+}
