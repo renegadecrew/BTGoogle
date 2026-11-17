@@ -15,7 +15,7 @@ name, or private lab address into a security prompt.
 - No network calls: the gate is pure text matching.
 - No silent widening: out-of-scope hosts prompt; explicit exclusions always win.
 - Fail-open: a crashing gate logs the error and allows, instead of bricking the agent.
-- Tested: 27 replication cases, all passing.
+- Tested: 30 replication cases, all passing.
 
 ```
    agent tool call
@@ -99,7 +99,7 @@ BTGoogle/
 │   ├── verify.ps1                  # send sample payloads through the gate
 │   └── scope_add.py                # add assets to a program file
 └── tests/
-    ├── test_gate.py                # replication matrix (27 cases)
+    ├── test_gate.py                # replication matrix (30 cases)
     └── payloads/
         ├── README.md
         ├── allow-in-scope.json
@@ -123,7 +123,7 @@ python tests/test_gate.py
 Expected output:
 
 ```
-27/27 passed
+30/30 passed
 ```
 
 ### 2. Install
@@ -292,7 +292,7 @@ The file rotates to `.log.1` at 2 MB.
 
 ## Verification
 
-`tests/test_gate.py` runs 27 cases against `hooks/scope_gate.py`, including:
+`tests/test_gate.py` runs 30 cases against `hooks/scope_gate.py`, including:
 
 | Case | Expected |
 |---|---|
@@ -312,9 +312,9 @@ The file rotates to `.log.1` at 2 MB.
 | RFC 1918 CIDR | `allow` |
 | Destructive command | `deny` |
 | Paramiko dotted identifiers | `allow` |
-| SSH user and host, with port or identity flags | `force_ask` when out of scope |
+| SSH `user@host`, including `-G`, port, or identity flags | `force_ask` when out of scope |
 
-Last verified run: **27/27 passed**. The regression matrix includes writes to
+Last verified run: **30/30 passed**. The regression matrix includes writes to
 protected hook locations using relative paths and SSH destination parsing.
 
 ## Design notes

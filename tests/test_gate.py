@@ -91,6 +91,12 @@ CASES = [
      "ssh -p 22 user@evil.test.org", "force_ask"),
     ("ssh identity and destination", "run_command", "CommandLine",
      "ssh -i lab_key user@evil.test.org", "force_ask"),
+    ("ssh -G user destination", "run_command", "CommandLine",
+     "ssh -G user@evil.test.org", "force_ask"),
+    ("ssh port and -G user destination", "run_command", "CommandLine",
+     "ssh -p 22 -G user@evil.test.org", "force_ask"),
+    ("ssh identity, -G and user destination", "run_command", "CommandLine",
+     "ssh -i lab_key -G user@evil.test.org", "force_ask"),
 ]
 
 
