@@ -1,0 +1,10 @@
+version: 2
+updates:
+  # El repo no declara paquetes Python de terceros. Vigila las Actions del CI.
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "13:00"
+    open-pull-requests-limit: 5

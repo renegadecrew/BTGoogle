@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "sources": {
+    "hooks_contract": {
+      "url": "https://antigravity.google/docs/hooks?tab=ide",
+      "sha256": "456f612ba4d3d5ede266264546aa5b3d67d93588064f578eb27f5a327864c103"
+    },
+    "ide_changelog": {
+      "url": "https://antigravity.google/docs/changelog?ide=vscode&tab=extensions",
+      "sha256": "09567ee18327584b3cbc4b763f66b040bbcb6c5768f7803f02341f4de79b21c3"
+    }
+  }
+}

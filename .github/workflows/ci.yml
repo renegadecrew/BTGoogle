@@ -1,0 +1,86 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+    tags: ["v*"]
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  python-tests:
+    name: Python ${{ matrix.python-version }} (Linux)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.14"]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Compile source and tests
+        run: python -m compileall -q hooks scripts tests
+      - name: Run gate decision matrix
+        run: python tests/test_gate.py
+      - name: Run parser unit tests
+        run: python -m unittest discover -s tests -v
+
+  windows-verification:
+    name: Windows PowerShell verification
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: Run gate regression tests
+        run: python tests/test_gate.py
+      - name: Run PowerShell smoke verification
+        shell: pwsh
+        run: ./scripts/verify.ps1
+  release:
+    name: Publish tagged GitHub release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [python-tests, windows-verification]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout release tag
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Package source and checksum
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          mkdir -p dist
+          git archive --format=zip --prefix="BTGoogle-${RELEASE_TAG}/" --output="dist/BTGoogle-${RELEASE_TAG}.zip" HEAD
+          sha256sum "dist/BTGoogle-${RELEASE_TAG}.zip" > "dist/BTGoogle-${RELEASE_TAG}.zip.sha256"
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: gh release create "$RELEASE_TAG" "dist/BTGoogle-${RELEASE_TAG}.zip" "dist/BTGoogle-${RELEASE_TAG}.zip.sha256" --title "$RELEASE_TAG" --generate-notes

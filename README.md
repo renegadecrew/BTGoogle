@@ -55,6 +55,7 @@ name, or private lab address into a security prompt.
 - [Configuration](#configuration)
 - [Decision log](#decision-log)
 - [Verification](#verification)
+- [CI and upstream monitoring](#ci-and-upstream-monitoring)
 - [Design notes](#design-notes)
 - [Limitations](#limitations)
 - [Further reading](#further-reading)
@@ -290,6 +291,19 @@ Every decision is appended as JSON Lines:
 
 The file rotates to `.log.1` at 2 MB.
 
+## CI and upstream monitoring
+
+The CI runs regression tests on pushes and pull requests to `master`: Python 3.10 and 3.14 on Linux, plus the PowerShell smoke verifier on Windows. It uses read-only permissions and does not execute sample network commands; tests pass tool-call payloads to the gate for classification. Pushing a `v*` tag runs the same full checks and, only after they pass, publishes a GitHub Release containing a ZIP of the tagged source and a SHA-256 checksum.
+
+Dependabot checks GitHub Actions weekly. This repository has no third-party Python packages, so a `pip` update entry would have no manifest to monitor. Dependabot keeps workflow actions current; it does not track product behavior or Google documentation changes. See [GitHub's Dependabot guide](https://docs.github.com/en/code-security/how-tos/secure-your-supply-chain/secure-your-dependencies/auto-update-actions).
+
+A separate daily watcher compares the hook-related text in Google's [Antigravity hook contract](https://antigravity.google/docs/hooks?tab=ide) and [IDE extension changelog](https://antigravity.google/docs/changelog?ide=vscode&tab=extensions) with a reviewed baseline. A detected change opens a GitHub issue with the source and changed-content fingerprints; it does not edit code or silently accept a new baseline. After reviewing the update, refresh the baseline with:
+
+```powershell
+python scripts/check_antigravity_upstream.py --update-baseline
+```
+
+This watches the Antigravity hook interface used by BTGoogle. It does not claim to monitor Gemini model/API behavior, which this repository does not consume directly.
 ## Verification
 
 `tests/test_gate.py` runs 30 cases against `hooks/scope_gate.py`, including:
