@@ -3,11 +3,11 @@
   "sources": {
     "hooks_contract": {
       "url": "https://antigravity.google/docs/hooks?tab=ide",
-      "sha256": "456f612ba4d3d5ede266264546aa5b3d67d93588064f578eb27f5a327864c103"
+      "sha256": "d1f735df2a5904e05debe04fd7cf39982d1f8d7b2326c5569d1f07fb40805a19"
     },
     "ide_changelog": {
       "url": "https://antigravity.google/docs/changelog?ide=vscode&tab=extensions",
-      "sha256": "09567ee18327584b3cbc4b763f66b040bbcb6c5768f7803f02341f4de79b21c3"
+      "sha256": "f086b952109a5e47e86f518e5ddb91bdbc74b9f988a04eb90242620969b9845a"
     }
   }
 }
