@@ -94,7 +94,7 @@ targets.
 ```json
 {
   "type": "command",
-  "command": "python C:/Users/<you>/.gemini/config/hooks/scope_gate.py",
+  "command": "python C:/Users/<you>/.gemini/config/hooks/scope_gate_v2.py",
   "timeout": 15
 }
 ```
@@ -115,8 +115,10 @@ targets.
 | `browser_.*` | Every tool starting with `browser_` |
 
 The shipped example matches every tool the gate can reason about. If you add a
-tool that carries a URL or host in a different argument, extend `TEXT_TOOLS`
-in `hooks/scope_gate.py` and the matcher together.
+tool that carries a URL or host in a different argument, extend
+`TARGET_TEXT_TOOLS` in the installed gate (`hooks/scope_gate_v2.py`) — or
+`TEXT_TOOLS` in the dependency-free reference gate (`hooks/scope_gate.py`) — and
+the matcher together.
 
 ## Fail-open behavior
 

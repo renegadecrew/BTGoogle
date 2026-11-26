@@ -89,18 +89,23 @@ BTGoogle/
 │   ├── other-engagements.md        # recipes for web, AD, CTF, cloud, malware
 │   └── troubleshooting.md          # BOM, force_ask vs ask, .htb, private IPs
 ├── hooks/
-│   ├── scope_gate.py               # the PreToolUse hook
+│   ├── scope_gate_v2.py            # the installed gate (one name, content-only)
+│   ├── scope_store.py              # scope registry the installed gate reads
+│   ├── scope_parser.py             # target extraction used by the registry
+│   ├── scope_gate.py               # reference gate (dependency-free, test matrix)
 │   ├── noise.json                  # reference domains that are never targets
 │   ├── hooks.json.example          # Antigravity hook configuration
 │   └── programs/
 │       ├── example-program.md      # template: replace with your engagement
 │       └── lab.md                  # RFC 1918 ranges and lab wildcards
 ├── scripts/
+│   ├── pin_hook.py                 # install/verify the gate under its pinned name
 │   ├── install.ps1                 # copy into ~/.gemini/config
 │   ├── verify.ps1                  # send sample payloads through the gate
 │   └── scope_add.py                # add assets to a program file
 └── tests/
-    ├── test_gate.py                # replication matrix (30 cases)
+    ├── test_gate.py                # replication matrix (32 cases)
+    ├── test_pin.py                 # one gate name, content-only updates
     └── payloads/
         ├── README.md
         ├── allow-in-scope.json
@@ -133,11 +138,21 @@ Expected output:
 powershell -ExecutionPolicy Bypass -File scripts/install.ps1
 ```
 
-The script copies `scope_gate.py` and `noise.json` into
-`%USERPROFILE%\.gemini\config\hooks\`, copies the example programs into
-`%USERPROFILE%\.gemini\config\engagements\programs\` when they do not already
-exist, and prints the `hooks.json` entry to add. It backs up existing files and
-never overwrites `hooks.json`.
+The script installs the gate trio (`scope_gate_v2.py`, `scope_store.py`,
+`scope_parser.py`) into `%USERPROFILE%\.gemini\config\hooks\`, merges
+`noise.json` (a union: the list never gets shorter), copies the example
+programs into `%USERPROFILE%\.gemini\config\engagements\programs\` when
+they do not already exist, and merges the `hooks.json` entry in place. Other
+entries keep their content, the file is backed up first and written
+atomically, so Antigravity never reads a half-written configuration.
+
+**One name, forever.** The installed gate is always
+`hooks/scope_gate_v2.py`. A new fix is a change to the *content* of that
+file; re-running the installer copies it over the same path. The version is
+never bumped and `hooks.json` is never repointed at a `scope_gate_v3.py` — if
+one ever appears, the installer stops with an error instead of quietly
+running two gates. `python scripts/pin_hook.py --check` fails when the
+installed copy drifts from the repository, and CI runs it on every push.
 
 ### 3. Register the hook
 
@@ -153,7 +168,7 @@ Merge the printed entry into `%USERPROFILE%\.gemini\config\hooks.json`:
         "hooks": [
           {
             "type": "command",
-            "command": "python C:/Users/<you>/.gemini/config/hooks/scope_gate.py",
+            "command": "python C:/Users/<you>/.gemini/config/hooks/scope_gate_v2.py",
             "timeout": 15
           }
         ]
@@ -164,10 +179,11 @@ Merge the printed entry into `%USERPROFILE%\.gemini\config\hooks.json`:
 ```
 
 `<you>` is a placeholder, not a literal path. Replace it with your Windows
-account name. `scripts/install.ps1` prints the exact `command` line for your
-machine, so the copy-paste-safe path is to run the installer and use its output.
-Use forward slashes in `command`. Restart Antigravity or reload hooks, then
-confirm with `/hooks` in the TUI. The full schema, including the stdin payload
+account name. The installer merges this entry for you and prints the exact
+`command` line it used; if you edit `hooks.json` by hand, copy that line
+rather than typing a path. Use forward slashes in `command`. Restart
+Antigravity or reload hooks, then confirm with `/hooks` in the TUI. The
+full schema, including the stdin payload
 and every accepted `decision` value, is in
 [`docs/hook-contract.md`](docs/hook-contract.md).
 
@@ -306,7 +322,11 @@ python scripts/check_antigravity_upstream.py --update-baseline
 This watches the Antigravity hook interface used by BTGoogle. It does not claim to monitor Gemini model/API behavior, which this repository does not consume directly.
 ## Verification
 
-`tests/test_gate.py` runs 30 cases against `hooks/scope_gate.py`, including:
+`tests/test_pin.py` guards what actually ships: the installed gate keeps its
+pinned name, a content update reuses it, a second version is rejected, and the
+installed file still returns the same decisions (including through a BOM).
+
+`tests/test_gate.py` runs 32 cases against `hooks/scope_gate.py`, including:
 
 | Case | Expected |
 |---|---|

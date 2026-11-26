@@ -39,6 +39,8 @@ jobs:
         run: python tests/test_gate.py
       - name: Run parser unit tests
         run: python -m unittest discover -s tests -v
+      - name: Verify the gate keeps its pinned name
+        run: python scripts/pin_hook.py --check
 
   windows-verification:
     name: Windows PowerShell verification
