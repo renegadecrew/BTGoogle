@@ -43,6 +43,21 @@ $bytes = [System.IO.File]::ReadAllBytes("$env:USERPROFILE\.gemini\config\hooks\n
 "BOM: $($bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF)"
 ```
 
+## The gate answers `allow` with `reason: invalid JSON payload`
+
+Your shell reached the gate but the JSON did not parse, so the gate failed
+open. The usual cause on Windows is Windows PowerShell 5.1, which encodes
+strings piped into a native command as UTF-8 *with* a BOM:
+
+```powershell
+Get-Content tests/payloads/deny-destructive.json -Raw | python hooks\scope_gate.py
+```
+
+The gate strips a BOM from stdin, so this works on current builds. On an older
+copy, the same command returns `allow` for `rm -rf /`. Set the encoding before
+piping, or use `powershell -File scripts/verify.ps1`, which now fails when a
+decision differs from the expected one instead of only printing it.
+
 ## Every out-of-scope host prompts, even ones you approved
 
 That is `force_ask` working as designed: it ignores cached Always-Allow, so a
