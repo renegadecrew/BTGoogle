@@ -18,10 +18,10 @@ $repo = Split-Path -Parent $PSScriptRoot
 $gate = Join-Path $repo "hooks\scope_gate.py"
 $python = (Get-Command python -ErrorAction Stop).Source
 
-# Windows PowerShell 5.1 encodes strings piped into a native command as UTF-8
-# with a BOM, which the gate would otherwise reject and fail open to "allow".
-# A BOM-less UTF-8 here keeps the decisions honest on 5.1 and on 7.x alike.
-$OutputEncoding = New-Object System.Text.UTF8Encoding $false
+# Deliberately no $OutputEncoding override: Windows PowerShell 5.1 pipes UTF-8
+# with a BOM, PowerShell 7 pipes it without, and this script should exercise
+# whichever one the caller shell really does. The gate strips a BOM from stdin,
+# so the decisions must come out the same either way.
 
 $env:BTG_PROGRAMS_DIR = Join-Path $repo "hooks\programs"
 $env:BTG_NOISE_FILE = Join-Path $repo "hooks\noise.json"
