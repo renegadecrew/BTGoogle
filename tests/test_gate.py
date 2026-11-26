@@ -100,6 +100,29 @@ CASES = [
 ]
 
 
+def run_gate_raw(data: bytes) -> dict:
+    """Pipe exact stdin bytes, the way a shell does, and return the decision."""
+    proc = subprocess.run(
+        [sys.executable, GATE],
+        input=data,
+        capture_output=True,
+        env=ENV,
+        timeout=30,
+    )
+    return json.loads(proc.stdout.decode("utf-8").strip())
+
+
+RAW_CASES = [
+    # label, exact stdin bytes, expected -- encodings real Windows shells emit
+    ("payload after a UTF-8 BOM",
+     b'\xef\xbb\xbf{"toolCall": {"name": "run_command", "args": {"CommandLine": "rm -rf /"}}}',
+     "deny"),
+    ("payload terminated with CRLF",
+     b'{"toolCall": {"name": "run_command", "args": {"CommandLine": "rm -rf /"}}}\r\n',
+     "deny"),
+]
+
+
 def run_gate(body: dict) -> dict:
     proc = subprocess.run(
         [sys.executable, GATE],
@@ -123,7 +146,14 @@ def main() -> int:
         failures += 0 if ok else 1
         print(f"{label:34} {expected:10} {actual or '-':10} {'ok' if ok else 'FAIL'}")
     print("-" * 70)
-    print(f"{len(CASES) - failures}/{len(CASES)} passed")
+    for label, data, expected in RAW_CASES:
+        actual = run_gate_raw(data).get("decision")
+        ok = actual == expected
+        failures += 0 if ok else 1
+        print(f"{label:34} {expected:10} {actual or '-':10} {'ok' if ok else 'FAIL'}")
+    print("-" * 70)
+    total = len(CASES) + len(RAW_CASES)
+    print(f"{total - failures}/{total} passed")
     return 1 if failures else 0
 
 

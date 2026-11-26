@@ -455,8 +455,27 @@ def decide(payload: dict) -> dict:
     return {"decision": "allow", "reason": "target in scope"}
 
 
+def read_stdin() -> str:
+    """Read the PreToolUse payload, tolerating a byte-order mark on stdin.
+
+    sys.stdin.read() decodes with the locale codec: on Windows that is cp1252,
+    where the UTF-8 BOM Windows PowerShell 5.1 prepends to a pipe becomes
+    "\u00ef\u00bb\u00bf" and the JSON parse fails open to allow -- a silently
+    disarmed gate.
+    """
+    data = sys.stdin.buffer.read()
+    try:
+        return data.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        return data.decode(sys.stdin.encoding or "utf-8", "replace")
+
+
 def main() -> None:
-    raw = sys.stdin.read()
+    # Windows PowerShell 5.1 prepends a UTF-8 BOM when it pipes a string into a
+    # native command (`Get-Content x | python scope_gate.py`). Left in place that
+    # makes every such payload "invalid JSON payload", which fails open to allow --
+    # a silently disarmed gate.
+    raw = read_stdin()
     if not raw.strip():
         print(json.dumps({"decision": "allow"}))
         return

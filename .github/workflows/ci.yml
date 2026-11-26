@@ -55,8 +55,15 @@ jobs:
           python-version: "3.12"
       - name: Run gate regression tests
         run: python tests/test_gate.py
-      - name: Run PowerShell smoke verification
+      - name: Run PowerShell smoke verification (PowerShell 7)
         shell: pwsh
+        run: ./scripts/verify.ps1
+      # windows-latest ships Windows PowerShell 5.1, which pipes strings into a
+      # native command as UTF-8 *with* a BOM. Without a gate that strips it, the
+      # JSON parse fails, the gate fails open, and every decision is "allow" --
+      # a green run of this step is what says that path is covered.
+      - name: Run PowerShell smoke verification (Windows PowerShell 5.1)
+        shell: powershell
         run: ./scripts/verify.ps1
   release:
     name: Publish tagged GitHub release
