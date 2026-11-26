@@ -26,6 +26,7 @@ LO QUE NO CAMBIA
     Un target real fuera de scope sigue dando force_ask. El registro, el match,
     los CATASTROPHIC y la proteccion de rutas de persistencia son identicos.
 """
+import hashlib
 import ipaddress
 import json
 import os
@@ -42,8 +43,28 @@ for _p in (os.path.dirname(os.path.abspath(__file__)), HOOKS):
 
 from scope_store import auto_capture, load_programs, match_target  # noqa: E402
 
-STATE = os.path.join(HOME, ".gemini", "config", ".hook_state")
-LOG = os.path.join(STATE, "gate-v2.log")
+# Las rutas de estado se pueden mover por entorno para que la matriz de tests
+# corra el gate INSTALADO sin escribir en el directorio vivo (si no, los hosts
+# de prueba acabarian en pending.json, la cola que el operador revisa).
+STATE = (os.environ.get("ANTIGRAVITY_STATE_DIR")
+         or os.path.join(HOME, ".gemini", "config", ".hook_state"))
+LOG = os.environ.get("BTG_LOG_FILE") or os.path.join(STATE, "gate-v2.log")
+
+# El gate dice que copia de si mismo esta corriendo: --whoami imprime ruta y
+# sha256, y cada linea del log lleva el prefijo del hash. Asi "el fix no se
+# aplico" se responde desde el gate y no re-hasheando archivos a mano.
+GATE_PATH = os.path.abspath(__file__)
+
+
+def _self_hash():
+    try:
+        with open(GATE_PATH, "rb") as handle:
+            return hashlib.sha256(handle.read()).hexdigest()
+    except Exception:
+        return "unknown"
+
+
+GATE_HASH = _self_hash()
 
 CATASTROPHIC = [
     (r"\brm\s+-[a-z]*[rf][a-z]*\s+(/|~|\$HOME|\*)\s*$", "borrado recursivo de raiz/home"),
@@ -54,6 +75,14 @@ CATASTROPHIC = [
     (r"\bDROP\s+(TABLE|DATABASE|SCHEMA)\b", "destruccion de base de datos"),
     (r"\bmkfs\.", "formateo de filesystem"),
 ]
+
+# Un push forzado reescribe la historia del remoto y no tiene vuelta atras
+# limpia. Es raro, asi que preguntar no cuesta friccion. --force-with-lease y
+# --force-if-includes son la forma segura y pasan.
+FORCE_PUSH = re.compile(
+    r"\bgit\s+push\b[^|;&\n]*(?:--force(?!-(?:with-lease|if-includes))|\s-f(?![\w-]))",
+    re.I,
+)
 
 # force_ask = pregunta SIEMPRE (ignora "Always Allow").
 # ask       = pregunta pero respeta "Always Allow" del runtime (menos friccion).
@@ -72,7 +101,8 @@ NOISE = {"localhost", "127.0.0.1", "0.0.0.0", "schemas.android.com",
 # Referencias (docs, social, registries) que nunca son target. Lista EXPLICITA
 # del operador en noise.json. No se aprende del trafico del agente: un auto-scope
 # que autoriza lo que el agente toca es, en la practica, apagar el gate.
-NOISE_FILE = os.path.join(HOOKS, "noise.json")
+NOISE_FILE = (os.environ.get("ANTIGRAVITY_GATE_NOISE")
+              or os.path.join(HOOKS, "noise.json"))
 
 
 def _load_noise():
@@ -180,6 +210,7 @@ def log(entry):
         if os.path.exists(LOG) and os.path.getsize(LOG) > LOG_MAX_BYTES:
             os.replace(LOG, LOG + ".1")
         entry["ts"] = datetime.now(timezone.utc).isoformat()
+        entry.setdefault("gate", GATE_HASH[:12])
         with open(LOG, "a", encoding="utf-8") as f:
             f.write(json.dumps(entry, ensure_ascii=True) + "\n")
     except Exception:
@@ -259,12 +290,18 @@ def extract_targets(text, is_cmd, tool):
 
 
 def decide_write(args, name):
-    path = (args.get(WRITE_TOOLS[name]) or "").replace("\\", "/")
+    raw = args.get(WRITE_TOOLS[name]) or ""
+    # Las rutas de las tools suelen ser relativas al workspace: se normaliza a
+    # absoluta para que ".agents/hooks.json" quede protegido igual que su forma
+    # absoluta (realpath tambien resuelve symlinks).
+    path = ""
+    if isinstance(raw, str) and raw.strip():
+        path = os.path.realpath(
+            os.path.abspath(os.path.expanduser(raw))).replace("\\", "/")
     if not path:
         print(json.dumps({"decision": "allow"}))
         return
-    expanded = os.path.expanduser(path)
-    if PROTECTED_PATH_RE.search(expanded):
+    if PROTECTED_PATH_RE.search(path):
         log({"event": "protected-write", "tool": name, "path": path})
         print(json.dumps({
             "decision": "force_ask",
@@ -293,6 +330,10 @@ def read_stdin():
 
 
 def main():
+    if "--whoami" in sys.argv:
+        print(json.dumps({"gate": GATE_PATH, "sha256": GATE_HASH,
+                          "pinned": os.path.basename(GATE_PATH)}))
+        return
     raw = read_stdin()
     if not raw.strip():
         print(json.dumps({"decision": "allow"}))
@@ -334,6 +375,16 @@ def main():
                               "agente.",
                 }))
                 return
+        m = FORCE_PUSH.search(text)
+        if m:
+            log({"event": "force_push", "text": text})
+            print(json.dumps({
+                "decision": "force_ask",
+                "reason": ("git push forzado (" + m.group(0).strip() +
+                           "): reescribe la historia del remoto y no se deshace "
+                           "solo. Con remoto compartido: --force-with-lease."),
+            }))
+            return
 
     if payload.get("transcriptPath"):
         try:

@@ -89,6 +89,10 @@ The gate emits `allow`, `force_ask`, or `deny`. It deliberately does not emit
 `auto_approve`, because that would bypass the human decision for out-of-scope
 targets.
 
+Run the gate with `--whoami` to print its own path and content hash; every log
+line carries a `gate` field with the same hash prefix, so a log tells you which
+copy of the gate produced it.
+
 ## Handler configuration
 
 ```json
@@ -119,6 +123,13 @@ tool that carries a URL or host in a different argument, extend
 `TARGET_TEXT_TOOLS` in the installed gate (`hooks/scope_gate_v2.py`) — or
 `TEXT_TOOLS` in the dependency-free reference gate (`hooks/scope_gate.py`) — and
 the matcher together.
+
+## Forced pushes
+
+`git push --force` and `-f` return `force_ask`; `--force-with-lease` and
+`--force-if-includes` are the careful forms and pass. Remote history has no clean
+undo and a forced push is rare, so the prompt costs nothing. Nothing else about
+git is judged by the gate — that is what human review is for.
 
 ## Fail-open behavior
 

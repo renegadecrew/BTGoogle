@@ -6,9 +6,12 @@ Run from the repository root:
 
     python tests/test_gate.py
 
-Each case pipes a PreToolUse payload into hooks/scope_gate.py and asserts the
-returned decision. The programs and noise list shipped in hooks/ are used, so
-the test exercises the same files a reviewer would install.
+Each case pipes a PreToolUse payload into the gate and asserts the returned
+decision. The gate defaults to the repository copy, hooks/scope_gate.py;
+BTG_GATE points the same matrix at another copy, which is how
+scripts/pin_hook.py --check proves the INSTALLED file still decides correctly
+instead of only sharing its hash. The programs and noise list shipped in
+hooks/ are used, so the test exercises the same files a reviewer would install.
 """
 
 from __future__ import annotations
@@ -20,15 +23,26 @@ import sys
 import tempfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-GATE = os.path.join(ROOT, "hooks", "scope_gate.py")
 PROGRAMS = os.path.join(ROOT, "hooks", "programs")
 NOISE = os.path.join(ROOT, "hooks", "noise.json")
 
+GATE = os.environ.get("BTG_GATE") or os.path.join(ROOT, "hooks", "scope_gate.py")
+
+STATE = tempfile.mkdtemp(prefix="btg-matrix-")
+
 ENV = dict(os.environ)
+# Both gates read the same registry and noise list under different names; set
+# all of them so one matrix covers the reference gate and the installed one.
 ENV["BTG_PROGRAMS_DIR"] = PROGRAMS
 ENV["BTG_NOISE_FILE"] = NOISE
-ENV["BTG_LOG_FILE"] = os.path.join(tempfile.gettempdir(), "btg-test.log")
-ENV.pop("BTG_GATE_PRIVATE_IPS", None)
+ENV["ANTIGRAVITY_ENGAGEMENTS_DIR"] = PROGRAMS
+ENV["ANTIGRAVITY_GATE_NOISE"] = NOISE
+ENV["ANTIGRAVITY_STATE_DIR"] = STATE
+ENV["BTG_LOG_FILE"] = os.path.join(STATE, "btg-test.log")
+for knob in ("BTG_GATE_PRIVATE_IPS", "ANTIGRAVITY_GATE_PRIVATE_IPS",
+             "BTG_OUT_OF_SCOPE", "ANTIGRAVITY_GATE_OUT_OF_SCOPE",
+             "ANTIGRAVITY_SCOPE_FILE"):
+    ENV.pop(knob, None)
 
 
 def payload(tool: str, field: str, value: str) -> dict:
@@ -73,6 +87,14 @@ CASES = [
      "nmap 172.20.0.9", "allow"),
     ("destructive command", "run_command", "CommandLine",
      "rm -rf /", "deny"),
+    ("forced push", "run_command", "CommandLine",
+     "git push --force origin master", "force_ask"),
+    ("forced push, short flag", "run_command", "CommandLine",
+     "git push -f origin main", "force_ask"),
+    ("forced push, safe form", "run_command", "CommandLine",
+     "git push --force-with-lease origin main", "allow"),
+    ("ordinary push", "run_command", "CommandLine",
+     "git push origin master", "allow"),
     ("relative hook config write", "write_to_file", "TargetFile",
      ".agents/hooks.json", "force_ask"),
     ("relative git hook write", "replace_file_content", "TargetFile",
@@ -137,6 +159,7 @@ def run_gate(body: dict) -> dict:
 
 def main() -> int:
     failures = 0
+    print(f"gate: {GATE}")
     print(f"{'case':34} {'expected':10} {'actual':10} result")
     print("-" * 70)
     for label, tool, field, value, expected in CASES:

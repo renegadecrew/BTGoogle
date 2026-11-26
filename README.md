@@ -104,7 +104,7 @@ BTGoogle/
 │   ├── verify.ps1                  # send sample payloads through the gate
 │   └── scope_add.py                # add assets to a program file
 └── tests/
-    ├── test_gate.py                # replication matrix (32 cases)
+    ├── test_gate.py                # replication matrix (36 cases, runs on any copy)
     ├── test_pin.py                 # one gate name, content-only updates
     └── payloads/
         ├── README.md
@@ -151,8 +151,19 @@ atomically, so Antigravity never reads a half-written configuration.
 file; re-running the installer copies it over the same path. The version is
 never bumped and `hooks.json` is never repointed at a `scope_gate_v3.py` — if
 one ever appears, the installer stops with an error instead of quietly
-running two gates. `python scripts/pin_hook.py --check` fails when the
-installed copy drifts from the repository, and CI runs it on every push.
+running two gates.
+
+**Same hash is not the same behaviour.** The installer and
+`python scripts/pin_hook.py --check` both pipe the full decision matrix
+through the *installed* file (`tests/test_gate.py` with `BTG_GATE` set), so a
+gate whose hash matches but whose imports resolve to a stale neighbour still
+fails. A flipped case is an install error, and CI runs `--check` on every
+push.
+
+**The gate says which copy it is.** `scope_gate_v2.py --whoami` prints its
+path and content hash, and every decision log line carries a `gate` prefix of
+that hash. "The fix did not take" is answered by the gate instead of by
+re-hashing files by hand.
 
 ### 3. Register the hook
 
@@ -160,7 +171,7 @@ Merge the printed entry into `%USERPROFILE%\.gemini\config\hooks.json`:
 
 ```json
 {
-  "scope-gate": {
+  "antigravity-osint": {
     "enabled": true,
     "PreToolUse": [
       {
@@ -287,10 +298,16 @@ All configuration is through environment variables and files.
 | `BTG_LOG_FILE` | `~/.gemini/config/.hook_state/scope-gate.log` | JSON Lines decision log |
 | `BTG_OUT_OF_SCOPE` | `force_ask` | `force_ask` (always prompt) or `ask` (respect Always-Allow) |
 | `BTG_GATE_PRIVATE_IPS` | unset | `1` also gates private/loopback/link-local addresses |
+| `BTG_GATE` | the repository gate | Which copy of the gate the test matrix runs against |
 | `BTG_LAB_TLDS` | `htb,local,lab,test,internal` | Extra single-label wildcard TLDs, comma-separated |
 
 Only `force_ask` and `ask` are accepted for `BTG_OUT_OF_SCOPE`. The value is
 validated so a typo cannot turn the gate into `allow`.
+
+The installed gate reads the same registry and noise list under its own names
+(`ANTIGRAVITY_ENGAGEMENTS_DIR`, `ANTIGRAVITY_GATE_NOISE`). `ANTIGRAVITY_STATE_DIR`
+and `BTG_LOG_FILE` move the state directory and the log, which is how the test
+matrix runs a copy without writing into your live `pending.json`.
 
 When the script is run from a checkout, it uses the local `hooks/programs/`
 and `hooks/noise.json` unless an environment variable overrides them. When it
@@ -345,11 +362,14 @@ installed file still returns the same decisions (including through a BOM).
 | `*.htb` in-scope host and subdomain | `allow` |
 | RFC 1918 CIDR | `allow` |
 | Destructive command | `deny` |
+| `git push --force` / `-f` | `force_ask` (`--force-with-lease` passes) |
 | Paramiko dotted identifiers | `allow` |
 | SSH `user@host`, including `-G`, port, or identity flags | `force_ask` when out of scope |
 
-Last verified run: **30/30 passed**. The regression matrix includes writes to
-protected hook locations using relative paths and SSH destination parsing.
+Last verified run: **36/36 passed**, on both the reference gate and the
+installed copy. The regression matrix includes writes to protected hook
+locations using relative paths, SSH destination parsing, and the forced-push
+rule.
 
 ## Design notes
 
@@ -368,6 +388,12 @@ when a wildcard covers it.
 **Persistence guard.** Writes to hook configuration, git hooks, shell profiles,
 and agent credential files return `force_ask`, regardless of scope. Those paths
 are how a single fetched page becomes code execution on every future tool call.
+
+**Forced pushes prompt.** `git push --force` and `-f` rewrite remote
+history with no clean undo and are rare enough that asking costs no friction;
+`--force-with-lease` and `--force-if-includes` are the careful forms and
+pass. Nothing else about git is judged here — that is what the human review is
+for.
 
 **Fail-open.** A crashing hook returns `allow` and logs the error. A gate that
 blocks everything gets disabled in a day.

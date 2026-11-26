@@ -18,6 +18,7 @@ This file is dependency-free and can be dropped into a hooks directory.
 
 from __future__ import annotations
 
+import hashlib
 import ipaddress
 import json
 import os
@@ -50,6 +51,22 @@ else:
     NOISE_FILE = DEFAULT_NOISE
 
 LOG_FILE = os.environ.get("BTG_LOG_FILE", DEFAULT_LOG)
+
+# The gate answers "which copy of me is running?" itself: --whoami prints its
+# path and content hash, and every log line carries the hash prefix. That
+# replaces re-hashing files by hand when a fix "did not take".
+GATE_PATH = os.path.abspath(__file__)
+
+
+def _self_hash() -> str:
+    try:
+        with open(GATE_PATH, "rb") as handle:
+            return hashlib.sha256(handle.read()).hexdigest()
+    except Exception:
+        return "unknown"
+
+
+GATE_HASH = _self_hash()
 
 # "force_ask" always prompts (ignores cached Always-Allow); "ask" respects it.
 OUT_OF_SCOPE = os.environ.get("BTG_OUT_OF_SCOPE", "force_ask")
@@ -104,6 +121,14 @@ CATASTROPHIC = [
     (r"\bmkfs\.", "filesystem format"),
 ]
 
+# A forced push rewrites remote history with no clean undo. It is rare, so
+# asking costs no friction; --force-with-lease and --force-if-includes are the
+# careful forms and pass.
+FORCE_PUSH = re.compile(
+    r"\bgit\s+push\b[^|;&\n]*(?:--force(?!-(?:with-lease|if-includes))|\s-f(?![\w-]))",
+    re.I,
+)
+
 _TOKEN = r"((?:\d{1,3}\.){3}\d{1,3}|(?:[a-z0-9](?:[a-z0-9\-]*[a-z0-9])?\.)+[a-z]{2,24})"
 
 URL_HOST = re.compile(r"https?://([^/\s:'\"<>)\]]+)", re.I)
@@ -142,6 +167,7 @@ def log(entry: dict) -> None:
         if os.path.exists(LOG_FILE) and os.path.getsize(LOG_FILE) > LOG_MAX_BYTES:
             os.replace(LOG_FILE, LOG_FILE + ".1")
         entry["ts"] = datetime.now(timezone.utc).isoformat()
+        entry.setdefault("gate", GATE_HASH[:12])
         with open(LOG_FILE, "a", encoding="utf-8") as fh:
             fh.write(json.dumps(entry, ensure_ascii=True) + "\n")
     except Exception:
@@ -414,6 +440,15 @@ def decide(payload: dict) -> dict:
                     "decision": "deny",
                     "reason": f"Blocked by scope gate: {why}. Run it manually if intentional.",
                 }
+        match = FORCE_PUSH.search(text)
+        if match:
+            log({"event": "force_push", "text": text})
+            return {
+                "decision": "force_ask",
+                "reason": "Forced git push (%s): rewrites remote history and does "
+                          "not undo itself. Prefer --force-with-lease on a shared "
+                          "remote." % match.group(0).strip(),
+            }
 
     programs = load_programs()
     if not programs:
@@ -471,6 +506,10 @@ def read_stdin() -> str:
 
 
 def main() -> None:
+    if "--whoami" in sys.argv:
+        print(json.dumps({"gate": GATE_PATH, "sha256": GATE_HASH,
+                          "pinned": os.path.basename(GATE_PATH)}))
+        return
     # Windows PowerShell 5.1 prepends a UTF-8 BOM when it pipes a string into a
     # native command (`Get-Content x | python scope_gate.py`). Left in place that
     # makes every such payload "invalid JSON payload", which fails open to allow --

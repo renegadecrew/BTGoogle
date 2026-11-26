@@ -14,9 +14,17 @@ THE RULE
     bug, and --check fails if one ever appears.
 
 USAGE
-    python scripts/pin_hook.py              install (copy content + merge hooks.json)
+    python scripts/pin_hook.py              install, then prove it behaves
     python scripts/pin_hook.py --dry-run    show what would change, touch nothing
     python scripts/pin_hook.py --check      verify the pinning, exit 1 on drift
+    python scripts/pin_hook.py --no-verify  install without running the matrix
+
+WHY IT RUNS THE MATRIX
+    A matching hash says the installed file IS the repository file. It does not
+    say the gate decides correctly there -- an import resolved from a stale copy
+    next to it, a missing dependency, a different registry. So install and
+    --check both pipe the difference matrix through the INSTALLED file
+    (tests/test_gate.py with BTG_GATE set) and fail if a single case flips.
 """
 
 from __future__ import annotations
@@ -25,6 +33,7 @@ import hashlib
 import json
 import os
 import shutil
+import subprocess
 import sys
 from datetime import datetime
 
@@ -192,7 +201,7 @@ def merge_noise(source: str, destination: str, dry: bool) -> str:
     return "updated"
 
 
-def install(dry: bool) -> int:
+def install(dry: bool, verify: bool = True) -> int:
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     destination_dir = hooks_dir()
 
@@ -218,7 +227,44 @@ def install(dry: bool) -> int:
     merge_hooks_json(os.path.join(destination_dir, GATE_NAME), dry)
     print("\ngate: %s" % os.path.join(destination_dir, GATE_NAME))
     print("sha256: %s" % digest(os.path.join(REPO_ROOT, "hooks", GATE_NAME)))
-    return 0
+
+    if dry:
+        return 0
+    if not verify:
+        print("matrix: skipped (--no-verify)")
+        return 0
+    return report_matrix(os.path.join(destination_dir, GATE_NAME))
+
+
+MATRIX = os.path.join(REPO_ROOT, "tests", "test_gate.py")
+
+
+def run_matrix(gate_path: str) -> tuple[bool, str]:
+    """Run the behaviour matrix against exactly this copy of the gate."""
+    if not os.path.isfile(MATRIX):
+        return True, "matrix not found, skipped"
+    environment = dict(os.environ)
+    environment["BTG_GATE"] = gate_path
+    proc = subprocess.run(
+        [sys.executable, MATRIX],
+        capture_output=True,
+        text=True,
+        env=environment,
+        timeout=900,
+    )
+    output = ((proc.stdout or "") + (proc.stderr or "")).strip()
+    return proc.returncode == 0, output
+
+
+def report_matrix(gate_path: str) -> int:
+    ok, output = run_matrix(gate_path)
+    summary = output.splitlines()[-1] if output else "no output"
+    if ok:
+        print("behaviour %s on the installed file" % summary)
+        return 0
+    print(output)
+    print("error: the installed gate does not behave like the repository copy")
+    return 1
 
 
 def check() -> int:
@@ -256,6 +302,13 @@ def check() -> int:
         source = os.path.join(REPO_ROOT, "hooks", GATE_NAME)
         if digest(source) != digest(installed):
             problems.append("installed gate differs from the repository copy (run without --check)")
+        ok, output = run_matrix(installed)
+        summary = output.splitlines()[-1] if output else "no output"
+        if ok:
+            print("behaviour %s on the installed file" % summary)
+        else:
+            print(output)
+            problems.append("installed gate fails the behaviour matrix: %s" % summary)
 
     if problems:
         for problem in problems:
@@ -276,7 +329,8 @@ def main() -> int:
     arguments = set(sys.argv[1:])
     if "--check" in arguments:
         return check()
-    return install(dry="--dry-run" in arguments)
+    return install(dry="--dry-run" in arguments,
+                   verify="--no-verify" not in arguments)
 
 
 if __name__ == "__main__":

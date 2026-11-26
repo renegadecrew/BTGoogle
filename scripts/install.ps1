@@ -1,69 +1,43 @@
 <#
 .SYNOPSIS
-    Install the BTGoogle scope gate into a Google Antigravity configuration.
+    Install the BTGoogle gate into a Google Antigravity configuration.
 
 .DESCRIPTION
-    Copies the gate, the noise list, and the example programs into the global
-    Antigravity configuration directory. Existing files are backed up first.
-    The hooks.json entry is printed but never overwritten automatically.
+    The work is done by scripts/pin_hook.py, so Windows and CI run the same
+    logic. The gate keeps ONE name forever (hooks/scope_gate_v2.py): installing
+    a new fix copies new CONTENT over that same file. The version is never
+    bumped and hooks.json is never repointed at scope_gate_v3.py.
+
+    The gate, its store, noise.json (merged, never shrunk) and the example
+    programs are placed in %USERPROFILE%\.gemini\config, and the hooks.json
+    entry is merged in place, backed up first.
 
 .NOTES
     Run from the repository root:
 
         powershell -ExecutionPolicy Bypass -File scripts/install.ps1
+        powershell -ExecutionPolicy Bypass -File scripts/install.ps1 -DryRun
+        powershell -ExecutionPolicy Bypass -File scripts/install.ps1 -Check
 #>
+
+param(
+    [switch]$DryRun,
+    [switch]$Check
+)
 
 $ErrorActionPreference = "Stop"
 
 $repo = Split-Path -Parent $PSScriptRoot
-$config = Join-Path $env:USERPROFILE ".gemini\config"
-$hooksDir = Join-Path $config "hooks"
-$programsDir = Join-Path $config "engagements\programs"
-$stamp = Get-Date -Format "yyyyMMdd-HHmmss"
+$python = (Get-Command python -ErrorAction Stop).Source
+$script = Join-Path $repo "scripts\pin_hook.py"
 
-foreach ($dir in @($hooksDir, $programsDir)) {
-    New-Item -ItemType Directory -Path $dir -Force | Out-Null
+if (-not (Test-Path -LiteralPath $script)) {
+    throw "missing $script"
 }
 
-function Install-File {
-    param([string]$Source, [string]$Destination)
-    if (Test-Path -LiteralPath $Destination) {
-        $backup = "$Destination.bak-$stamp"
-        Copy-Item -LiteralPath $Destination -Destination $backup -Force
-        Write-Host "backup  $backup"
-    }
-    Copy-Item -LiteralPath $Source -Destination $Destination -Force
-    Write-Host "install $Destination"
-}
+$arguments = @($script)
+if ($Check) { $arguments += "--check" }
+elseif ($DryRun) { $arguments += "--dry-run" }
 
-Install-File (Join-Path $repo "hooks\scope_gate.py") (Join-Path $hooksDir "scope_gate.py")
-Install-File (Join-Path $repo "hooks\noise.json") (Join-Path $hooksDir "noise.json")
-
-Get-ChildItem -LiteralPath (Join-Path $repo "hooks\programs") -Filter *.md | ForEach-Object {
-    $destination = Join-Path $programsDir $_.Name
-    if (-not (Test-Path -LiteralPath $destination)) {
-        Copy-Item -LiteralPath $_.FullName -Destination $destination
-        Write-Host "install $destination"
-    } else {
-        Write-Host "skip    $destination (already exists)"
-    }
-}
-
-$hookCommand = "python " + ((Join-Path $hooksDir "scope_gate.py") -replace "\\", "/")
-$snippet = @"
-Add this entry to $config\hooks.json (merge with existing entries, do not replace the file):
-
-  "scope-gate": {
-    "enabled": true,
-    "PreToolUse": [
-      {
-        "matcher": "run_command|manage_task|read_url_content|search_web|ask_permission|write_to_file|replace_file_content|multi_replace_file_content|browser_.*",
-        "hooks": [
-          { "type": "command", "command": "$hookCommand", "timeout": 15 }
-        ]
-      }
-    ]
-  }
-"@
-Write-Host ""
-Write-Host $snippet
+& $python @arguments
+exit $LASTEXITCODE
