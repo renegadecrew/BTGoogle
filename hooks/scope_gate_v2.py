@@ -275,7 +275,8 @@ _TOKEN = r"((?:\d{1,3}\.){3}\d{1,3}|(?:[a-z0-9](?:[a-z0-9\-]*[a-z0-9])?\.)+[a-z]
 
 URL_HOST_RE = re.compile(r"https?://([^/\s:'\"<>)\]]+)", re.I)
 NET_TOOL_RE = re.compile(
-    r"\b(?:nmap|masscan|curl|wget|ping|ping6|tracert|traceroute|nslookup|dig|"
+    r"\b(?:nmap|masscan|subfinder|amass|httpx|nuclei|ffuf|gobuster|feroxbuster|"
+    r"sqlmap|nikto|curl|wget|ping|ping6|tracert|traceroute|nslookup|dig|"
     r"host|whois|scp|sftp|ftp|nc|ncat|netcat|telnet|"
     r"Test-Connection|Test-NetConnection|Resolve-DnsName|"
     r"Invoke-WebRequest|Invoke-RestMethod|iwr|irm)\b", re.I)
@@ -357,7 +358,9 @@ def _ssh_targets(text):
 CMD_TOOLS = {"run_command": "CommandLine", "manage_task": "Input"}
 TARGET_TEXT_TOOLS = {"read_url_content": "Url", "search_web": "query",
                      "ask_permission": "Target"}
-WRITE_TOOLS = {"write_to_file": "TargetFile",
+WRITE_TOOLS = {"write_file": "Path",
+               "edit_file": "Path",
+               "write_to_file": "TargetFile",
                "replace_file_content": "TargetFile",
                "multi_replace_file_content": "TargetFile"}
 
@@ -391,7 +394,7 @@ HARD_DENY_PATH_RE = re.compile(
     r"|/\.gemini/antigravity/brain/[^/]+/\.system_generated/"
     r")", re.I)
 
-WRITE_PATH_KEYS = ("TargetFile", "Target", "path", "file_path",
+WRITE_PATH_KEYS = ("Path", "TargetFile", "Target", "path", "file_path",
                    "AbsolutePath", "File", "filePath")
 
 LOG_MAX_BYTES = 2 * 1024 * 1024
@@ -495,6 +498,8 @@ def _is_noise(host):
 
 def _keep(host):
     if not host:
+        return False
+    if "{" in host or "}" in host:
         return False
     if EXT_RE.search(host):
         return False

@@ -200,6 +200,22 @@ CASES = [
      "ssh -L 8080:evil.test.org:80 target", "force_ask"),
     ("ftp URL", "run_command", "CommandLine",
      "curl ftp://evil.test.org/x", "force_ask"),
+    # Antigravity 2.0 write_file / edit_file use Path instead of TargetFile.
+    ("write_file hooks.json asks", "write_file", "Path",
+     os.path.join(os.path.expanduser("~"), ".gemini", "config", "hooks.json"),
+     "force_ask"),
+    ("edit_file registry is denied", "edit_file", "Path",
+     os.path.join(os.path.expanduser("~"), ".gemini", "config", "engagements",
+                  "programs", "evil.md"), "deny"),
+    ("edit_file ordinary file", "edit_file", "Path",
+     "docs/notes.md", "allow"),
+    # Recon tools beyond nmap/curl and template placeholders in scripts.
+    ("subfinder out-of-scope", "run_command", "CommandLine",
+     "subfinder -d evil.test.org -silent", "force_ask"),
+    ("subfinder in-scope", "run_command", "CommandLine",
+     "subfinder -d api.example.org -silent", "allow"),
+    ("url template placeholder ignored", "run_command", "CommandLine",
+     'python -c "url = f\'http://{addr}/healthz\'"', "allow"),
 ]
 
 

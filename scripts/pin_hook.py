@@ -54,7 +54,8 @@ SHIPPED = (REFERENCE_NAME,) + PAYLOAD_FILES
 ENTRY_KEY = "antigravity-osint"
 MATCHER = (
     "run_command|manage_task|read_url_content|search_web|ask_permission|"
-    "write_to_file|replace_file_content|multi_replace_file_content|browser_.*"
+    "write_file|edit_file|write_to_file|replace_file_content|"
+    "multi_replace_file_content|browser_.*"
 )
 
 
