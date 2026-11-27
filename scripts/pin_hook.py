@@ -45,6 +45,12 @@ STORE_NAME = "scope_store.py"
 PARSER_NAME = "scope_parser.py"
 PAYLOAD_FILES = (GATE_NAME, STORE_NAME, PARSER_NAME)
 
+# Every hook file the repository ships. The reference gate is not the one
+# hooks.json runs, but it IS the copy a reviewer installs first, and a stale
+# copy of it decides by older rules without anyone noticing.
+REFERENCE_NAME = "scope_gate.py"
+SHIPPED = (REFERENCE_NAME,) + PAYLOAD_FILES
+
 ENTRY_KEY = "antigravity-osint"
 MATCHER = (
     "run_command|manage_task|read_url_content|search_web|ask_permission|"
@@ -201,6 +207,39 @@ def merge_noise(source: str, destination: str, dry: bool) -> str:
     return "updated"
 
 
+def install_programs(dry: bool) -> str:
+    """Copy the shipped example programs only when the installed one is missing.
+
+    The gate reads ~/.gemini/config/engagements/programs. A fresh install with
+    an empty registry used to allow everything, so the default install has to
+    leave at least one program behind. An operator's existing program is never
+    overwritten.
+    """
+    source_dir = os.path.join(REPO_ROOT, "hooks", "programs")
+    destination_dir = os.path.join(config_dir(), "engagements", "programs")
+    if not os.path.isdir(source_dir):
+        print("warn: no hooks/programs to install")
+        return "missing"
+    status = "unchanged"
+    for name in sorted(os.listdir(source_dir)):
+        if not name.endswith(".md"):
+            continue
+        source = os.path.join(source_dir, name)
+        destination = os.path.join(destination_dir, name)
+        if os.path.exists(destination):
+            print("keep     %s" % destination)
+            continue
+        if dry:
+            print("would    %s" % destination)
+            status = "updated"
+            continue
+        os.makedirs(destination_dir, exist_ok=True)
+        shutil.copy2(source, destination)
+        print("install  %s" % destination)
+        status = "updated"
+    return status
+
+
 def install(dry: bool, verify: bool = True) -> int:
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     destination_dir = hooks_dir()
@@ -211,7 +250,7 @@ def install(dry: bool, verify: bool = True) -> int:
         print("       the gate keeps one name; fold the change into %s instead" % GATE_NAME)
         return 1
 
-    for name in PAYLOAD_FILES:
+    for name in SHIPPED:
         source = os.path.join(REPO_ROOT, "hooks", name)
         if not os.path.isfile(source):
             print("error: missing %s in the repository" % source)
@@ -224,6 +263,7 @@ def install(dry: bool, verify: bool = True) -> int:
     if os.path.isfile(source_noise):
         merge_noise(source_noise, os.path.join(destination_dir, "noise.json"), dry)
 
+    install_programs(dry)
     merge_hooks_json(os.path.join(destination_dir, GATE_NAME), dry)
     print("\ngate: %s" % os.path.join(destination_dir, GATE_NAME))
     print("sha256: %s" % digest(os.path.join(REPO_ROOT, "hooks", GATE_NAME)))
@@ -256,6 +296,12 @@ def run_matrix(gate_path: str) -> tuple[bool, str]:
     return proc.returncode == 0, output
 
 
+def failing_lines(output: str) -> str:
+    """Only the cases that broke, so a failed check stays readable."""
+    lines = [line for line in output.splitlines() if "FAIL" in line]
+    return chr(10).join(lines[:40])
+
+
 def report_matrix(gate_path: str) -> int:
     ok, output = run_matrix(gate_path)
     summary = output.splitlines()[-1] if output else "no output"
@@ -279,6 +325,13 @@ def check() -> int:
     if strays:
         problems.append("repository carries extra gate versions: %s" % ", ".join(strays))
 
+    installed_dir = hooks_dir()
+    have_install = os.path.isdir(installed_dir)
+    if not have_install:
+        # CI has no ~/.gemini; the repo-only checks still run, but there is
+        # nothing installed to compare against.
+        print("note: no installed gate at %s; repo-only check" % installed_dir)
+
     path = hooks_json()
     if os.path.exists(path):
         with open(path, "rb") as handle:
@@ -297,18 +350,37 @@ def check() -> int:
             for name in stray_versions(destination_dir_of(command)):
                 problems.append("hooks.json: command runs %s" % name)
 
-    installed = os.path.join(hooks_dir(), GATE_NAME)
-    if os.path.exists(installed):
-        source = os.path.join(REPO_ROOT, "hooks", GATE_NAME)
+    if have_install:
+        programs_dir = os.path.join(config_dir(), "engagements", "programs")
+        programs = (os.listdir(programs_dir)
+                    if os.path.isdir(programs_dir) else [])
+        if not any(name.endswith(".md") for name in programs):
+            problems.append(
+                "engagements/programs is empty (run without --check)")
+
+    for name in SHIPPED:
+        if not have_install:
+            continue
+        installed = os.path.join(hooks_dir(), name)
+        source = os.path.join(REPO_ROOT, "hooks", name)
+        if not os.path.exists(installed):
+            problems.append("%s is not installed (run without --check)" % name)
+            continue
         if digest(source) != digest(installed):
-            problems.append("installed gate differs from the repository copy (run without --check)")
+            problems.append("installed %s differs from the repository copy (run without --check)" % name)
+        # A matching hash says the installed file IS the repository file; the
+        # matrix says it still decides correctly. The modules are imported by a
+        # gate, so the gate's own run covers them. The reference shim is covered
+        # by the pinned gate's run, so it is not run twice.
+        if name != GATE_NAME:
+            continue
         ok, output = run_matrix(installed)
         summary = output.splitlines()[-1] if output else "no output"
         if ok:
-            print("behaviour %s on the installed file" % summary)
+            print("%s: behaviour %s" % (name, summary))
         else:
-            print(output)
-            problems.append("installed gate fails the behaviour matrix: %s" % summary)
+            print(failing_lines(output))
+            problems.append("%s fails the behaviour matrix: %s" % (name, summary))
 
     if problems:
         for problem in problems:

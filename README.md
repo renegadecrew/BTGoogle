@@ -14,8 +14,12 @@ name, or private lab address into a security prompt.
 - No hidden state: authorization lives in Markdown files you can review and diff.
 - No network calls: the gate is pure text matching.
 - No silent widening: out-of-scope hosts prompt; explicit exclusions always win.
-- Fail-open: a crashing gate logs the error and allows, instead of bricking the agent.
-- Tested: 30 replication cases, all passing.
+- No self-authorization: the agent cannot write the scope registry or the
+  transcript the gate reads; those writes are denied.
+- Fail-open by default: a crashing gate logs the error and allows, instead of
+  bricking the agent. `BTG_FAIL_CLOSED=1` turns an error into a prompt.
+- Tested: the replication matrix in `tests/test_gate.py` (71 cases at the time
+  of writing), all passing on the installed gate.
 
 ```
    agent tool call
@@ -86,13 +90,14 @@ BTGoogle/
 │   ├── hook-contract.md            # Antigravity hook schema and payloads
 │   ├── scope-model.md              # program files, matching, precedence
 │   ├── target-extraction.md        # inspected and ignored contexts
+│   ├── threat-model.md             # what the gate does and does not stop
 │   ├── other-engagements.md        # recipes for web, AD, CTF, cloud, malware
 │   └── troubleshooting.md          # BOM, force_ask vs ask, .htb, private IPs
 ├── hooks/
 │   ├── scope_gate_v2.py            # the installed gate (one name, content-only)
 │   ├── scope_store.py              # scope registry the installed gate reads
 │   ├── scope_parser.py             # target extraction used by the registry
-│   ├── scope_gate.py               # reference gate (dependency-free, test matrix)
+│   ├── scope_gate.py               # deprecated shim: delegates to scope_gate_v2
 │   ├── noise.json                  # reference domains that are never targets
 │   ├── hooks.json.example          # Antigravity hook configuration
 │   └── programs/
@@ -102,9 +107,10 @@ BTGoogle/
 │   ├── pin_hook.py                 # install/verify the gate under its pinned name
 │   ├── install.ps1                 # copy into ~/.gemini/config
 │   ├── verify.ps1                  # send sample payloads through the gate
-│   └── scope_add.py                # add assets to a program file
+│   ├── scope_add.py                # add assets to a program file
+│   └── redact_state.py             # clean secrets from old logs/pending.json
 └── tests/
-    ├── test_gate.py                # replication matrix (36 cases, runs on any copy)
+    ├── test_gate.py                # replication matrix (71 cases, runs on any copy)
     ├── test_pin.py                 # one gate name, content-only updates
     └── payloads/
         ├── README.md
@@ -129,7 +135,7 @@ python tests/test_gate.py
 Expected output:
 
 ```
-30/30 passed
+71/71 passed
 ```
 
 ### 2. Install
@@ -138,13 +144,19 @@ Expected output:
 powershell -ExecutionPolicy Bypass -File scripts/install.ps1
 ```
 
-The script installs the gate trio (`scope_gate_v2.py`, `scope_store.py`,
-`scope_parser.py`) into `%USERPROFILE%\.gemini\config\hooks\`, merges
+The script installs the pinned gate and its modules (`scope_gate_v2.py`,
+`scope_store.py`, `scope_parser.py`, plus the `scope_gate.py` compatibility
+shim) into `%USERPROFILE%\.gemini\config\hooks\`, merges
 `noise.json` (a union: the list never gets shorter), copies the example
-programs into `%USERPROFILE%\.gemini\config\engagements\programs\` when
-they do not already exist, and merges the `hooks.json` entry in place. Other
-entries keep their content, the file is backed up first and written
-atomically, so Antigravity never reads a half-written configuration.
+programs into `%USERPROFILE%\.gemini\config\engagements\programs\` **only when
+they do not already exist** (an operator's program is never overwritten), and
+merges the `hooks.json` entry in place. Other entries keep their content, the
+file is backed up first and written atomically, so Antigravity never reads a
+half-written configuration.
+
+An empty registry is no longer a no-op: the gate returns `force_ask` when it
+has nothing to validate against. `BTG_ALLOW_EMPTY=1` is the explicit escape
+hatch for a first run.
 
 **One name, forever.** The installed gate is always
 `hooks/scope_gate_v2.py`. A new fix is a change to the *content* of that
@@ -157,8 +169,15 @@ running two gates.
 `python scripts/pin_hook.py --check` both pipe the full decision matrix
 through the *installed* file (`tests/test_gate.py` with `BTG_GATE` set), so a
 gate whose hash matches but whose imports resolve to a stale neighbour still
-fails. A flipped case is an install error, and CI runs `--check` on every
-push.
+fails. A flipped case is an install error. CI installs into a throwaway `HOME`
+and runs the matrix against that installed file on every push.
+
+**A session, not a syntax list.** The matrix is written from a real
+engagement: unpacking a challenge binary, `strings`/`objdump`/x64dbg on it, the
+platform page, the lab machine — and then the calls an agent makes when it goes
+off-script (`rd /s /q C:\`, `git -C repo push -f`, `powershell -enc ...`,
+`browser_navigate`). The negatives carry as much weight as the positives: a gate
+that prompts on `rm -rf ./build` is switched off by hand within a day.
 
 **The gate says which copy it is.** `scope_gate_v2.py --whoami` prints its
 path and content hash, and every decision log line carries a `gate` prefix of
@@ -279,7 +298,7 @@ does not assume a bug-bounty program, a CTF, or any particular platform.
 |---|---|
 | Web app / bug bounty | Add the program's domains and wildcards |
 | Internal network / AD | Add CIDRs; enable your lab TLD with `BTG_LAB_TLDS` |
-| CTF / hosted lab | Add the platform's CIDR and wildcard |
+| CTF / hosted lab | Add the platform's CIDR and wildcard; keep the platform host (`hackthebox.com`) in `noise.json` — it is where the challenge lives, not a target |
 | Cloud | List specific assets; never wildcard a shared cloud domain |
 | Malware / binary analysis | Local commands are allowed; add sample sources to noise |
 | CVE / vendor research | Local PoCs are allowed; add reference sites to noise |
@@ -293,25 +312,26 @@ All configuration is through environment variables and files.
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `BTG_PROGRAMS_DIR` | `~/.gemini/config/engagements/programs` | Directory of `*.md` programs |
-| `BTG_NOISE_FILE` | `~/.gemini/config/hooks/noise.json` | Reference-domain list |
-| `BTG_LOG_FILE` | `~/.gemini/config/.hook_state/scope-gate.log` | JSON Lines decision log |
-| `BTG_OUT_OF_SCOPE` | `force_ask` | `force_ask` (always prompt) or `ask` (respect Always-Allow) |
-| `BTG_GATE_PRIVATE_IPS` | unset | `1` also gates private/loopback/link-local addresses |
-| `BTG_GATE` | the repository gate | Which copy of the gate the test matrix runs against |
+| `ANTIGRAVITY_ENGAGEMENTS_DIR` | `~/.gemini/config/engagements/programs` | Directory of `*.md` programs |
+| `ANTIGRAVITY_GATE_NOISE` | `~/.gemini/config/hooks/noise.json` | Reference-domain list |
+| `ANTIGRAVITY_STATE_DIR` | `~/.gemini/config/.hook_state` | State directory (`pending.json`, capture cache) |
+| `BTG_LOG_FILE` | `<state>/gate-v2.log` | JSON Lines decision log |
+| `ANTIGRAVITY_GATE_OUT_OF_SCOPE` | `force_ask` | `force_ask` (always prompt) or `ask` (respect Always-Allow) |
+| `ANTIGRAVITY_GATE_PRIVATE_IPS` | unset | `1` also gates private/loopback/link-local addresses |
+| `BTG_AUTO_CAPTURE` | unset (off) | `1` enables transcript auto-capture |
+| `BTG_ALLOW_ANY_TRANSCRIPT` | unset | `1` lets auto-capture read a transcript outside `brain/` (tests only) |
+| `BTG_ALLOW_EMPTY` | unset | `1` allows network calls when the registry is empty |
+| `BTG_FAIL_CLOSED` | unset | `1` turns a gate crash into `force_ask` instead of `allow` |
+| `BTG_GATE` | the pinned gate | Which copy `tests/test_gate.py` runs |
 | `BTG_LAB_TLDS` | `htb,local,lab,test,internal` | Extra single-label wildcard TLDs, comma-separated |
 
-Only `force_ask` and `ask` are accepted for `BTG_OUT_OF_SCOPE`. The value is
-validated so a typo cannot turn the gate into `allow`.
+Only `force_ask` and `ask` are accepted for `ANTIGRAVITY_GATE_OUT_OF_SCOPE`. The
+value is validated so a typo cannot turn the gate into `allow`.
 
-The installed gate reads the same registry and noise list under its own names
-(`ANTIGRAVITY_ENGAGEMENTS_DIR`, `ANTIGRAVITY_GATE_NOISE`). `ANTIGRAVITY_STATE_DIR`
-and `BTG_LOG_FILE` move the state directory and the log, which is how the test
-matrix runs a copy without writing into your live `pending.json`.
-
-When the script is run from a checkout, it uses the local `hooks/programs/`
-and `hooks/noise.json` unless an environment variable overrides them. When it
-is installed under `~/.gemini/config/hooks/`, it uses the global directories.
+`ANTIGRAVITY_STATE_DIR` and `BTG_LOG_FILE` move the state directory and the log,
+which is how the test matrix runs a copy without writing into your live
+`pending.json`. The old `BTG_PROGRAMS_DIR` / `BTG_NOISE_FILE` names are gone:
+the pinned gate reads the `ANTIGRAVITY_*` names above.
 
 ## Decision log
 
@@ -343,7 +363,8 @@ This watches the Antigravity hook interface used by BTGoogle. It does not claim 
 pinned name, a content update reuses it, a second version is rejected, and the
 installed file still returns the same decisions (including through a BOM).
 
-`tests/test_gate.py` runs 32 cases against `hooks/scope_gate.py`, including:
+`tests/test_gate.py` runs 71 cases against the pinned gate
+(`hooks/scope_gate_v2.py`), including:
 
 | Case | Expected |
 |---|---|
@@ -365,11 +386,18 @@ installed file still returns the same decisions (including through a BOM).
 | `git push --force` / `-f` | `force_ask` (`--force-with-lease` passes) |
 | Paramiko dotted identifiers | `allow` |
 | SSH `user@host`, including `-G`, port, or identity flags | `force_ask` when out of scope |
+| SSH `-J`, `ProxyJump=`, `-L` host | `force_ask` when out of scope |
+| Write to `engagements/programs/*` or a transcript | `deny` |
+| `rm -r -f /`, `rm --recursive --force /`, `rm -rf "$HOME"`, `rm -rf -- /` | `deny` |
+| `rd /q /s C:\`, `Remove-Item -Recurse -Force C:\` | `deny` |
+| Empty registry | `force_ask` |
+| Writable transcript with no `BTG_AUTO_CAPTURE` | `force_ask`, no program written |
+| Bearer token in a command | absent from the log |
 
-Last verified run: **36/36 passed**, on both the reference gate and the
-installed copy. The regression matrix includes writes to protected hook
-locations using relative paths, SSH destination parsing, and the forced-push
-rule.
+Last verified run: **71/71 passed**, on both the repository copy and the
+installed copy. The regression matrix includes registry/transcript write
+protection, argv-normalized destructive commands, SSH jump/forward hosts,
+auto-capture default-off, empty-registry behavior, and log redaction.
 
 ## Design notes
 
@@ -388,6 +416,9 @@ when a wildcard covers it.
 **Persistence guard.** Writes to hook configuration, git hooks, shell profiles,
 and agent credential files return `force_ask`, regardless of scope. Those paths
 are how a single fetched page becomes code execution on every future tool call.
+Writes to the scope registry (`engagements/`) and to the transcript/task logs
+(`brain/*/.system_generated/`) return `deny`: those are the paths that let an
+agent authorize itself, so they are not a human-approval decision.
 
 **Forced pushes prompt.** `git push --force` and `-f` rewrite remote
 history with no clean undo and are rare enough that asking costs no friction;
@@ -395,8 +426,9 @@ history with no clean undo and are rare enough that asking costs no friction;
 pass. Nothing else about git is judged here — that is what the human review is
 for.
 
-**Fail-open.** A crashing hook returns `allow` and logs the error. A gate that
-blocks everything gets disabled in a day.
+**Fail-open, with an opt-in fail-closed.** A crashing hook returns `allow` and
+logs the error. A gate that blocks everything gets disabled in a day.
+`BTG_FAIL_CLOSED=1` returns `force_ask` on error instead.
 
 **Encoding tolerance.** `noise.json` is read as `utf-8-sig`, so a UTF-8 BOM
 written by an editor does not silently disable the reference list.
@@ -410,10 +442,12 @@ written by an editor does not silently disable the reference list.
   ownership verification.
 - Scope is not inferred from conversation history. Programs are added
   explicitly with `scope_add.py` or by writing a Markdown file.
-- This standalone gate does not include transcript auto-capture. That feature
-  exists in richer integrations but is intentionally omitted here, because an
-  auto-capture path that misreads code as a scope paste can authorize hosts
-  that were never in scope.
+- Transcript auto-capture is **opt-in** (`BTG_AUTO_CAPTURE=1`) and off by
+  default. The transcript is a file the agent can write; reading it as the
+  user's voice is a self-authorization chain. When enabled, the path must be
+  under `~/.gemini/antigravity/brain/`, and the registry/transcript write guard
+  still applies. The recommended path is `scope_add.py` or a reviewed program
+  file, not auto-capture.
 
 ## Further reading
 
