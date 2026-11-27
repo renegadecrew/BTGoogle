@@ -17,11 +17,16 @@ EL MODELO CORRECTO
     engagements/programs/<slug>.md   un archivo por programa, generado solo
     engagements/programs/<slug>.raw.txt   el paste original, como evidencia
 
-COMO ENTRA UN PROGRAMA (sin editar nada a mano)
-    1. Lo pegas en el chat -> auto_capture() lo detecta en el transcript y lo
-       registra automaticamente en el primer tool call.
-    2. python scope_add.py -> toma el portapapeles (o stdin) y lo registra.
-    3. Dejas un .md en engagements/programs/ -> lo levanta el proximo gate.
+COMO ENTRA UN PROGRAMA
+    1. python scope_add.py -> toma los argumentos (o stdin) y lo registra en el
+       registro instalado.
+    2. Dejas un .md en engagements/programs/ -> lo levanta el proximo gate.
+    3. OPCIONAL: con BTG_AUTO_CAPTURE=1, un paste en el chat se detecta en el
+       transcript. Apagado por defecto: el transcript es un archivo que el
+       agente puede escribir, y leerlo como voz del usuario es una cadena de
+       auto-autorizacion. Si se enciende, solo se acepta un transcript bajo
+       ~/.gemini/antigravity/brain/ (BTG_ALLOW_ANY_TRANSCRIPT=1 lo relaja para
+       tests).
 
     Un target esta autorizado si CUALQUIER programa vigente lo incluye.
 """
@@ -562,12 +567,22 @@ def auto_capture(transcript_path, tail_bytes=512 * 1024):
     reciente esta ahi. Los hashes ya procesados se cachean, asi que es
     idempotente y barato (una lectura por turno como maximo).
     """
+    # Opt-in explicito. El transcript lo puede escribir el agente; si el gate lo
+    # lee como si fuera el usuario, una escritura se convierte en autorizacion.
+    if os.environ.get("BTG_AUTO_CAPTURE") != "1":
+        return []
     if SINGLE or not transcript_path:
         return []
     # El doc escribe transcriptPath como "~/.gemini/antigravity/brain/..."; si el
     # payload llega con "~" literal, sin expandir no se autoregistra nada y el
     # fallo es silencioso.
     transcript_path = os.path.expanduser(transcript_path)
+    if os.environ.get("BTG_ALLOW_ANY_TRANSCRIPT") != "1":
+        brain = os.path.realpath(os.path.join(
+            HOME, ".gemini", "antigravity", "brain"))
+        real = os.path.realpath(transcript_path)
+        if not (real == brain or real.startswith(brain + os.sep)):
+            return []
     if not os.path.exists(transcript_path):
         return []
     try:

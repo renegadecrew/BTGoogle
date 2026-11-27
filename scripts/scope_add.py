@@ -4,10 +4,13 @@
 Usage:
     python scripts/scope_add.py example.com 203.0.113.0/24
     echo example.com | python scripts/scope_add.py
-    python scripts/scope_add.py --program hooks/programs/manual.md example.com
+    python scripts/scope_add.py --program C:/path/manual.md example.com
+    python scripts/scope_add.py --repo example.com   # repo copy, for tests
 
-Accepted forms: domain, wildcard, IPv4, CIDR. The default program is
-hooks/programs/manual.md next to this repository.
+Accepted forms: domain, wildcard, IPv4, CIDR. The default program is the
+INSTALLED registry at ~/.gemini/config/engagements/programs/manual.md, which is
+the file the gate actually reads. `--repo` targets hooks/programs/manual.md
+inside this repository instead.
 """
 
 from __future__ import annotations
@@ -86,6 +89,10 @@ def split_sections(text: str) -> tuple[str, list[str], list[str]]:
 def main() -> int:
     args = sys.argv[1:]
 
+    use_repo = "--repo" in args
+    if use_repo:
+        args.remove("--repo")
+
     program = None
     if "--program" in args:
         index = args.index("--program")
@@ -114,8 +121,14 @@ def main() -> int:
         return 1
 
     if program is None:
-        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        program = os.path.join(root, "hooks", "programs", "manual.md")
+        if use_repo:
+            root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            program = os.path.join(root, "hooks", "programs", "manual.md")
+        else:
+            # The gate reads the installed registry, not the repository copy.
+            program = os.path.join(
+                os.path.expanduser("~"), ".gemini", "config", "engagements",
+                "programs", "manual.md")
 
     os.makedirs(os.path.dirname(os.path.abspath(program)), exist_ok=True)
 
@@ -143,7 +156,7 @@ def main() -> int:
     with open(program, "w", encoding="utf-8", newline="\n") as fh:
         fh.write("\n".join(lines))
 
-    print(f"Added {len(added)} asset(s) to {program}")
+    print(f"Added {len(added)} asset(s) to {os.path.abspath(program)}")
     for asset in added:
         print(f"  {asset}")
     return 0

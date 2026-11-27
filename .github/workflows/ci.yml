@@ -37,6 +37,12 @@ jobs:
         run: python -m compileall -q hooks scripts tests
       - name: Run gate decision matrix
         run: python tests/test_gate.py
+      - name: Install into a throwaway HOME and verify the installed gate
+        run: |
+          export HOME="$(mktemp -d)"
+          python scripts/pin_hook.py --no-verify
+          test -f "$HOME/.gemini/config/engagements/programs/example-program.md"
+          BTG_GATE="$HOME/.gemini/config/hooks/scope_gate_v2.py" python tests/test_gate.py
       - name: Run parser unit tests
         run: python -m unittest discover -s tests -v
       - name: Verify the gate keeps its pinned name
